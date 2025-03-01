@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hierarchical List Editor</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        ul { list-style-type: none; padding-left: 20px; }
+        li { margin: 5px 0; display: flex; align-items: center; }
+        .selected { background: lightblue; }
+        button { margin: 2px; }
+        input.inline-edit { border: none; font-size: inherit; width: auto; }
+    </style>
+</head>
+<body>
+    <h2>Hierarchical List Editor</h2>
+    <input type="text" id="textInput" placeholder="Enter text"> 
+    <button onclick="addItem()">Add</button>
+    <ul id="list"></ul>
+    <div>
+        <button onclick="moveUp()">⬆️ Up</button>
+        <button onclick="moveDown()">⬇️ Down</button>
+        <button onclick="indent()">➡️ Indent</button>
+        <button onclick="outdent()">⬅️ Outdent</button>
+    </div>
+    <button onclick="exportList()">Copy Plain Text</button>
+    <button onclick="importList()">Reimport from Clipboard</button>
+    
+    <script>
+        let selectedItem = null;
+
+        function addItem() {
+            const text = document.getElementById('textInput').value;
+            if (!text) return;
+            
+            const li = document.createElement('li');
+            li.innerHTML = `<span onclick="selectItem(this)">${text}</span> 
+                            <button onclick="editItem(this)">✏️</button>
+                            <button onclick="deleteItem(this)">❌</button>`;
+            document.getElementById('list').appendChild(li);
+            document.getElementById('textInput').value = '';
+            updateNumbers();
+        }
+
+        function importList() {
+            navigator.clipboard.readText().then(text => {
+                const lines = text.split('\n');
+                document.getElementById('list').innerHTML = '';
+                let stack = [{ level: -1, ul: document.getElementById('list') }];
+
+                lines.forEach(line => {
+                    const trimmed = line.trim();
+                    if (!trimmed) return;
+                    
+                    const level = line.match(/^\s*/)[0].length / 2;
+                    const textContent = trimmed.replace(/^\d+(\.\d+)*\s/, '');
+                    const li = document.createElement('li');
+                    li.innerHTML = `<span onclick="selectItem(this)">${textContent}</span>
+                                    <button onclick="editItem(this)">✏️</button>
+                                    <button onclick="deleteItem(this)">❌</button>`;
+
+                    while (stack.length > 1 && stack[stack.length - 1].level >= level) {
+                        stack.pop();
+                    }
+
+                    let parentUl = stack[stack.length - 1].ul;
+                    if (stack.length > 1 && stack[stack.length - 1].level < level) {
+                        let sublist = stack[stack.length - 1].ul.lastElementChild.querySelector('ul');
+                        if (!sublist) {
+                            sublist = document.createElement('ul');
+                            stack[stack.length - 1].ul.lastElementChild.appendChild(sublist);
+                        }
+                        parentUl = sublist;
+                    }
+
+                    parentUl.appendChild(li);
+                    stack.push({ level, ul: parentUl });
+                });
+
+                updateNumbers();
+            }).catch(() => alert("Failed to read clipboard!"));
+        }
+        function selectItem(element) {
+            if (selectedItem) selectedItem.classList.remove('selected');
+            selectedItem = element.parentElement;
+            selectedItem.classList.add('selected');
+        }
+
+        function editItem(button) {
+            let li = button.parentElement;
+            let span = li.querySelector('span');
+            let input = document.createElement('input');
+            let persistButton = document.createElement('button');
+            
+            input.type = 'text';
+            input.className = 'inline-edit';
+            input.value = span.textContent;
+            persistButton.textContent = '✔️';
+            persistButton.onclick = function(event) {
+                event.stopPropagation();
+                span.textContent = input.value;
+                exitEditMode(li, input, persistButton, button, false);
+                updateNumbers();
+            };
+            
+            input.onkeydown = function(event) {
+                if (event.key === 'Enter') {
+                    persistButton.click();
+                } else if (event.key === 'Escape') {
+                    exitEditMode(li, input, persistButton, button, true);
+                }
+            };
+
+            input.onblur = function(event) {
+                setTimeout(() => {
+                    if (document.activeElement !== persistButton) {
+                        exitEditMode(li, input, persistButton, button, true);
+                    }
+                }, 100);
+            };
+            
+            span.style.display = 'none';
+            button.style.display = 'none';
+            li.insertBefore(input, span);
+            li.insertBefore(persistButton, span);
+            input.focus();
+        }
+
+        function exitEditMode(li, input, persistButton, editButton, revert) {
+            let span = li.querySelector('span');
+            
+            if (!revert) {
+                span.textContent = input.value;
+            }
+            span.style.display = 'inline';
+            editButton.style.display = 'inline';
+            input.remove();
+            persistButton.remove();
+        }
+
+        function deleteItem(button) {
+            button.parentElement.remove();
+            selectedItem = null;
+            updateNumbers();
+        }
+
+        function moveUp() {
+            if (!selectedItem) return;
+            let parent = selectedItem.parentElement.closest('li');
+            let prev = selectedItem.previousElementSibling;
+
+            if (prev) {
+                selectedItem.parentElement.insertBefore(selectedItem, prev);
+            } else if (parent) {
+                parent.parentElement.insertBefore(selectedItem, parent);
+            }
+            updateNumbers();
+        }
+
+        function moveDown() {
+            if (!selectedItem) return;
+            let parent = selectedItem.parentElement.closest('li');
+            let next = selectedItem.nextElementSibling;
+
+            if (next) {
+                selectedItem.parentElement.insertBefore(next, selectedItem);
+            } else if (parent) {
+                parent.parentElement.insertBefore(selectedItem, parent.nextElementSibling);
+            }
+            updateNumbers();
+        }
+
+        function indent() {
+            if (!selectedItem || !selectedItem.previousElementSibling) return;
+            let sublist = selectedItem.previousElementSibling.querySelector('ul');
+            if (!sublist) {
+                sublist = document.createElement('ul');
+                selectedItem.previousElementSibling.appendChild(sublist);
+            }
+            sublist.appendChild(selectedItem);
+            updateNumbers();
+        }
+
+        function outdent() {
+            if (!selectedItem || !selectedItem.parentElement.parentElement.closest('ul')) return;
+            selectedItem.parentElement.parentElement.insertBefore(selectedItem, selectedItem.parentElement.nextSibling);
+            updateNumbers();
+        }
+
+        function updateNumbers() {
+            function traverseList(ul, prefix = "") {
+                let counter = 1;
+                Array.from(ul.children).forEach(li => {
+                    let number = prefix ? `${prefix}.${counter}` : `${counter}`;
+                    let span = li.querySelector('span');
+                    span.textContent = number + ' ' + span.textContent.replace(/^\d+(\.\d+)*\s/, '');
+                    let sublist = li.querySelector('ul');
+                    if (sublist) traverseList(sublist, number);
+                    counter++;
+                });
+            }
+            traverseList(document.getElementById('list'));
+        }
+
+        function exportList() {
+            function traverseList(ul, depth = 0) {
+                return Array.from(ul.children).map(li => {
+                    let text = '  '.repeat(depth) + li.querySelector('span').textContent;
+                    let sublist = li.querySelector('ul');
+                    return sublist ? text + '\n' + traverseList(sublist, depth + 1) : text;
+                }).join('\n');
+            }
+            
+            const result = traverseList(document.getElementById('list'));
+            navigator.clipboard.writeText(result).then(() => alert("Copied to clipboard!"));
+        }
+    </script>
+</body>
+</html>
