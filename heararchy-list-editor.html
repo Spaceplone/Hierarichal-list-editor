@@ -26,9 +26,25 @@
     </div>
     <button onclick="exportList()">Copy Plain Text</button>
     <button onclick="importList()">Reimport from Clipboard</button>
+    <textarea id="liveExport" readonly></textarea>
     
     <script>
         let selectedItem = null;
+
+        function updateLiveExport() {
+            document.getElementById('liveExport').value = generateExportText();
+        }
+
+        function generateExportText() {
+            function traverseList(ul, depth = 0) {
+                return Array.from(ul.children).map(li => {
+                    let text = '  '.repeat(depth) + li.querySelector('span').textContent;
+                    let sublist = li.querySelector('ul');
+                    return sublist ? text + '\n' + traverseList(sublist, depth + 1) : text;
+                }).join('\n');
+            }
+            return traverseList(document.getElementById('list'));
+        }
 
         function addItem() {
             const text = document.getElementById('textInput').value;
@@ -201,19 +217,12 @@
                 });
             }
             traverseList(document.getElementById('list'));
+            updateLiveExport();
         }
 
         function exportList() {
-            function traverseList(ul, depth = 0) {
-                return Array.from(ul.children).map(li => {
-                    let text = '  '.repeat(depth) + li.querySelector('span').textContent;
-                    let sublist = li.querySelector('ul');
-                    return sublist ? text + '\n' + traverseList(sublist, depth + 1) : text;
-                }).join('\n');
-            }
-            
-            const result = traverseList(document.getElementById('list'));
-            navigator.clipboard.writeText(result).then(() => alert("Copied to clipboard!"));
+            const result = generateExportText();
+            navigator.clipboard.writeText(result);
         }
     </script>
 </body>
